@@ -15,21 +15,22 @@ namespace DisqusXml
 
 		static void Main(string[] args)
 		{
-			//FixXml();
+			// this works for output to console, but not piping or assignment to variables;
+			// if using PowerShell, execute the following:
+			//   [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
+			Console.OutputEncoding = System.Text.Encoding.UTF8;
+			string find = args[0];
+			string author = args.Length > 1 ? args[1] : null;
+
+			string PathX2 = Path.Replace("x.xml", "x2.xml");
+			if (!File.Exists(PathX2))
+				FixXml();
 			XmlDocument x = new XmlDocument();
-			x.Load(Path.Replace("x.xml", "x2.xml"));
-			//foreach (var n in x.SelectSingleNode(")
+			x.Load(PathX2);
 			var roots = x.DocumentElement.SelectNodes("li[contains(@class, 'post')]").Cast<XmlElement>();
 			var rootPosts = roots.Select(n => new Post(n));
 			var all = rootPosts.SelectMany(r => TraverseDepth(r)).ToArray();
-			Console.WriteLine(Find(all, args[0], author: "Questioner"));
-			//Console.WriteLine(ListResults(all, "free will"));
-
-			//foreach (var p in all)
-			//{
-			//	if (Regex.IsMatch(p.Html, "free will"))
-			//		Console.WriteLine(p.Author);
-			//}
+			Console.WriteLine(Find(all, find, author: author));
 
 			return;
 
@@ -82,15 +83,18 @@ namespace DisqusXml
 					(author == null || p.Author.Equals(author, StringComparison.InvariantCultureIgnoreCase)) &&
 					(!requireReplies || p.Children.Length > 0))
 				.OrderBy(p => p.DatePosted)
-				.SelectMany(p => SelectNodesCaseInvariant(p, p.HtmlNode, find)
+				//.Select(p => $"<blockquote><a href=\"{p.Url}\">{p.Author}</a>@{p.Parent?.Author}: {p.Html}</blockquote>")
+				.SelectMany(p => SelectNodesCaseInvariant(p.HtmlNode, find)
 					//.SelectNodes(".//*[contains(lower-case(text()), 'free will')]")
 					//.Cast<XmlElement>()
-					.Select(n => new { Post = p, Match = BlockLevelNonBlockquoteNode(n) }))
+					.Select(n => new { Post = p, Match = BlockLevelNonBlockquoteNode(n) })
+					.Distinct())
 				//.Select(p => $"{p.Author}{(p.Parent != null ? $" -> {p.Parent.Author}" : "")} {p.DatePostedString}")
 				.Where(e => e.Match != null)
-				.SelectMany(e => Regex.Split(e.Match.InnerXml, @"<br\s*/>", RegexOptions.IgnoreCase)
-					.Where(s => s.Contains(find, StringComparison.InvariantCultureIgnoreCase))
-					.Select(s => $"<blockquote><a href=\"{e.Post.Url}\">{e.Post.Author}</a>@{e.Post.Parent?.Author}: {s}</blockquote>"))
+				.Select(e => $"<blockquote><a href=\"{e.Post.Url}\">{e.Post.Author}</a>@{e.Post.Parent?.Author}: {e.Match.InnerXml}</blockquote>")
+				//.SelectMany(e => Regex.Split(e.Match.InnerXml, @"<br\s*/>", RegexOptions.IgnoreCase)
+				//	.Where(s => s.Contains(find, StringComparison.InvariantCultureIgnoreCase))
+				//	.Select(s => $"<blockquote><a href=\"{e.Post.Url}\">{e.Post.Author}</a>@{e.Post.Parent?.Author}: {s}</blockquote>"))
 				.Join("\n\n");
 		}
 
@@ -113,12 +117,12 @@ namespace DisqusXml
 			return xe;
 		}
 
-		static IEnumerable<XmlNode> SelectNodesCaseInvariant(Post p, XmlNode n, string find)
+		static IEnumerable<XmlNode> SelectNodesCaseInvariant(XmlNode n, string find)
 		{
 			if (n is XmlText && n.InnerText.Contains(find, StringComparison.CurrentCultureIgnoreCase))
 				yield return n;
 			foreach (var c in n.ChildNodes)
-				foreach (var cc in SelectNodesCaseInvariant(p, (XmlNode)c, find))
+				foreach (var cc in SelectNodesCaseInvariant((XmlNode)c, find))
 					yield return cc;
 		}
 
